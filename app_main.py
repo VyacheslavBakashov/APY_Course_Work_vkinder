@@ -15,23 +15,26 @@ def get_skip_lists(id_user, db_conn):
     return fav_list + black_list_
 
 
-def get_user_db(user_id, db_conn):
-    """Выводит данные произвольного совпадения для user_vk_id,
-    если того нет в favorite_list и black_list"""
-    keys = ['first_name', 'last_name', 'profile_link', 'user_photos']
+def get_available_ids(user_id, db_conn) -> list:
+    """Выводит список match_user_id для user_vk_id,
+    которых нет в favorite_list и black_list"""
     db_id = db_conn.find_db_id_user(user_id)
-    if db_id:
-        # находим список тех кого исключить из показа
-        skip_list = set(get_skip_lists(db_id, db_conn))
-        available_ids = list(set(db_conn.get_match_ids(db_id)).difference(skip_list))
-        values = db_conn.get_info(random.choice(available_ids))
-        return dict(zip(keys, values))
+    match_ids = db_conn.get_match_ids(db_id)
+    skip_list = get_skip_lists(db_id, db_conn)
+    return list(set(match_ids).difference(set(skip_list)))
 
 
-def search_add_users(user_id, vk_conn, db_conn):
+def get_user_db(db_conn, some_ids):
+    """Выводит данные произвольного совпадения для user_vk_id"""
+    keys = ['first_name', 'last_name', 'profile_link', 'user_photos']
+    values = db_conn.get_info(random.choice(some_ids))
+    return dict(zip(keys, values))
+
+
+def search_add_users(user_id, vk_conn, db_conn, count=50):
     """Ищет людей и добавляет их в базу данных (в match_users и couple) для user_vk_id"""
     params = vk_conn.get_params_for_search(user_id)
-    found_list = iter(vk_conn.search(**params))
+    found_list = iter(vk_conn.search(count=count, **params))
     for person in found_list:
         db_conn.add_match_user(**person)
         db_conn.add_couple(
@@ -47,7 +50,7 @@ def show_list(some_list, db_conn, vk_conn, user_id):
             info = db_conn.get_info(match_id_db)
             vk_conn.push_show_list(user_id, info)
     else:
-        my_bot.send_message(user_id_, 'Список пуст', my_bot.key_review.get_keyboard())
+        vk_conn.send_message(user_id_, 'Список пуст', vk_conn.key_review.get_keyboard())
 
 
 def find_db_ids(user_id, person, db_conn):
@@ -70,36 +73,56 @@ if __name__ == '__main__':
         while True:
             user_id_, msg = my_bot.bot_listen()
 
-            if msg.lower() in ['привет', 'hello', 'hi', 'q', 'прив']:
+            if msg.lower() in ['привет', 'hello', 'hi', '/q', 'прив']:
                 my_bot.say_hello(user_id_, my_db)
 
-            elif msg.lower() in ['старт', 's', 'ы']:
+            elif msg.lower() in ['старт', '/s', '/ы']:
                 my_db.add_user(user_id_)
                 search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
-                current_finding = get_user_db(user_id_, my_db)
+                current_finding = get_user_db(my_db, get_available_ids(user_id_, my_db))
                 my_bot.push_start(user_id_, current_finding)
 
-            elif msg.lower() in ['next']:
-                current_finding = get_user_db(user_id_, my_db)
+            elif msg.lower() in ['next', '/n']:
+                avail_ids = get_available_ids(user_id_, my_db)
+                if len(avail_ids) > 3:
+                    current_finding = get_user_db(my_db, avail_ids)
+                else:
+                    my_bot.push_search_more(user_id_)
+                    search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
+                    current_finding = get_user_db(my_db, get_available_ids(user_id_, my_db))
                 my_bot.push_next(user_id_, current_finding)
 
-            elif msg.lower() in ['to favorite list']:
-                id_db_user, id_db_match_user = find_db_ids(user_id_, current_finding, my_db)
-                my_db.add_to_favorite(id_db_user, id_db_match_user)
-                my_bot.push_add_favorite(user_id_, current_finding)
+            elif msg.lower() in ['to favorite list', '/af']:
+                try:
+                    id_db_user, id_db_match_user = find_db_ids(user_id_, current_finding, my_db)
+                except Exception as err:
+                    print(err)
+                    my_bot.send_message(user_id_, 'Кликни Next', my_bot.key_review.get_keyboard())
+                else:
+                    my_db.add_to_favorite(id_db_user, id_db_match_user)
+                    my_bot.push_add_favorite(user_id_, current_finding)
 
-            elif msg.lower() in ['to black list']:
-                id_db_user, id_db_match_user = find_db_ids(user_id_, current_finding, my_db)
-                my_db.add_to_black_list(id_db_user, id_db_match_user)
-                my_bot.push_add_blacklist(user_id_, current_finding)
+            elif msg.lower() in ['to black list', '/bl']:
+                try:
+                    id_db_user, id_db_match_user = find_db_ids(user_id_, current_finding, my_db)
+                except Exception as err:
+                    print(err)
+                    my_bot.send_message(user_id_, 'Кликни Next', my_bot.key_review.get_keyboard())
+                else:
+                    my_db.add_to_black_list(id_db_user, id_db_match_user)
+                    my_bot.push_add_blacklist(user_id_, current_finding)
 
-            elif msg.lower() in ['show favorites']:
+            elif msg.lower() in ['show favorites', '/sf']:
                 favorites_list = my_db.get_favorites(my_db.find_db_id_user(user_id_))
                 show_list(favorites_list, my_db, my_bot, user_id_)
 
-            elif msg.lower() in ['show black list']:
+            elif msg.lower() in ['show black list', '/sbl']:
                 black_list = my_db.get_blacklist(my_db.find_db_id_user(user_id_))
                 show_list(black_list, my_db, my_bot, user_id_)
+
+            elif msg.lower() in ['find more', '/fm']:
+                search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
+                my_bot.push_search_more(user_id_)
 
             else:
                 my_bot.wrong_message(user_id_)

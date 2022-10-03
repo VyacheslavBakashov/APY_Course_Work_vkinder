@@ -8,7 +8,7 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 class VkBot:
 
-    def __init__(self, gr_token, user_token, api_version='5.131'):
+    def __init__(self, gr_token: str, user_token: str, api_version='5.131'):
         self.vk_session = vk_api.VkApi(token=gr_token)
         self.user_session = vk_api.VkApi(token=user_token)
         # self.serv_session = vk_api.VkApi(token=service_group_token_)
@@ -26,6 +26,7 @@ class VkBot:
         self.key_review.add_line()
         self.key_review.add_button(label='Show Favorites', color=VkKeyboardColor.PRIMARY)
         self.key_review.add_button(label='Show Black List', color=VkKeyboardColor.PRIMARY)
+        # self.key_review.add_button(label='Find More', color=VkKeyboardColor.PRIMARY)
 
     def bot_listen(self):
         """
@@ -39,7 +40,7 @@ class VkBot:
                     user_id = event.user_id
                     return user_id, msg_text
 
-    def get_user_info(self, user_id):
+    def get_user_info(self, user_id) -> dict:
         """
         Возвращает словарь из параметров пользователя
         :param user_id: vk_user_id
@@ -58,7 +59,7 @@ class VkBot:
                    'extended': 1,
                    'has_photo': 1,
                    'photo_sizes': 1,
-                   'count': 25}
+                   'count': 15}
 
         def get_three_photos(response):
             return sorted(response['items'], key=lambda x: x['likes']['count'], reverse=True)[:3]
@@ -66,13 +67,14 @@ class VkBot:
         try:
             resp = self.user_session.method('photos.get', params_)
         except ApiError:
-            return []
+            return
         else:
             return ','.join([f'photo{owner_id}_{photo["id"]}' for photo in get_three_photos(resp)])
 
-    def search(self, sex, age_from=18, age_to=None, city=None, country=1):
+    def search(self, sex: str, age_from=18, age_to=None, city=None, country=1, count=50) -> list:
         """
         Метод для поиска пользователей VK по параметрам
+        :param count: количество для поиска
         :param sex: пол
         :param age_from: с какого возраста
         :param age_to: до какого возраста
@@ -82,40 +84,42 @@ class VkBot:
         """
         if age_from < 18:
             age_from = 18
-        offset = random.randint(1, 5)
         fields = {
-            'sort': 1,
+            'sort': random.randint(0, 1),
             'country': country,
             'city': city,
             'status': 1,
-            'count': 150,
-            'offset': offset,
+            'count': count,
             'sex': sex,
             'age_from': age_from,
             'age_to': age_to,
             'is_closed': False,
             'fields': 'bdate, city, sex'
         }
-        response = self.user_session.method('users.search', fields)
+        try:
+            response = self.user_session.method('users.search', fields)
+        except ApiError as err:
+            print(err, 'Поиск не удался')
+            return []
+        else:
+            found_list = []
+            keys = ['first_name', 'last_name', 'profile_link', 'vk_id', 'bdate', 'user_photos']
+            for item in response['items']:
+                photos = self._get_photos(item['id'])
+                if photos and item.get('sex'):
+                    values = [item[keys[0]],
+                              item[keys[1]],
+                              'https://vk.com/id' + str(item['id']),
+                              item['id'],
+                              item[keys[4]],
+                              photos
+                              ]
+                    person_info = dict(zip(keys, values))
+                    person_info['city'] = item.get('city', {'id': None})['id']
+                    found_list.append(person_info)
+            return found_list
 
-        found_list = []
-        keys = ['first_name', 'last_name', 'profile_link', 'vk_id', 'bdate', 'user_photos']
-        for item in response['items']:
-            photos = self._get_photos(item['id'])
-            if photos and item.get('sex'):
-                values = [item[keys[0]],
-                          item[keys[1]],
-                          'https://vk.com/id' + str(item['id']),
-                          item['id'],
-                          item[keys[4]],
-                          photos
-                          ]
-                person_info = dict(zip(keys, values))
-                person_info['city'] = item.get('city', {'id': None})['id']
-                found_list.append(person_info)
-        return found_list
-
-    def get_params_for_search(self, user_id):
+    def get_params_for_search(self, user_id) -> dict:
         """
         Получает словарь с параметрами для поиска на основании данных пользователя
         :param user_id: vk_user_id
@@ -126,7 +130,7 @@ class VkBot:
         find_dict = {
             'sex': user_info['sex'] % 2 + 1,
             'city': user_info['city']['id'],
-            'age_from': user_age - 8,
+            'age_from': user_age - 10,
             'age_to': user_age
         }
         return find_dict
@@ -209,8 +213,13 @@ class VkBot:
         fn, ln, link = user_info[:-1]
         message = f'{fn}, {ln}, {link}'
         self.send_message(user_id=user_id, message=message,
-                          keyboard=self.key_review.get_keyboard()
-                          )
+                          keyboard=self.key_review.get_keyboard())
+
+    def push_search_more(self, user_id):
+        """Выводит сообщение, что текущий результат добавлен список избранных"""
+        message = f'Подождите немного... В поиске...)'
+        self.send_message(user_id=user_id, message=message,
+                          keyboard=self.key_review.get_keyboard())
 
     def wrong_message(self, user_id):
         """Выыодится в случае, когда бот не смог обработать сообщение от собеседника"""
