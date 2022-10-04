@@ -102,7 +102,7 @@ if __name__ == '__main__':
                     my_db.add_to_favorite(id_db_user, id_db_match_user)
                     my_bot.push_add_favorite(user_id_, current_finding)
 
-            elif msg.lower() in ['to black list', '/bl']:
+            elif msg.lower() in ['to black list', '/abl']:
                 try:
                     id_db_user, id_db_match_user = find_db_ids(user_id_, current_finding, my_db)
                 except Exception as err:
@@ -122,7 +122,8 @@ if __name__ == '__main__':
 
             elif msg.lower() in ['find more', '/fm']:
                 search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
-                my_bot.push_search_more(user_id_)
+                my_bot.send_message(user_id_, 'Готово! Кликни Next',
+                                    my_bot.key_review.get_keyboard())
 
             else:
                 my_bot.wrong_message(user_id_)

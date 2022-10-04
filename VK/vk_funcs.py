@@ -59,10 +59,10 @@ class VkBot:
                    'extended': 1,
                    'has_photo': 1,
                    'photo_sizes': 1,
-                   'count': 15}
+                   'count': 100}
 
         def get_three_photos(response):
-            return sorted(response['items'], key=lambda x: x['likes']['count'], reverse=True)[:3]
+            return sorted(response['items'], key=lambda x: x['likes']['count'], reverse=True)[:4]
 
         try:
             resp = self.user_session.method('photos.get', params_)
@@ -89,6 +89,7 @@ class VkBot:
             'country': country,
             'city': city,
             'status': 1,
+            'offset': 50,
             'count': count,
             'sex': sex,
             'age_from': age_from,
@@ -106,6 +107,7 @@ class VkBot:
             keys = ['first_name', 'last_name', 'profile_link', 'vk_id', 'bdate', 'user_photos']
             for item in response['items']:
                 photos = self._get_photos(item['id'])
+                print(photos)
                 if photos and item.get('sex'):
                     values = [item[keys[0]],
                               item[keys[1]],
@@ -223,5 +225,12 @@ class VkBot:
 
     def wrong_message(self, user_id):
         """Выыодится в случае, когда бот не смог обработать сообщение от собеседника"""
-        message = 'Не понимаю тебя'
+        message = 'Не понимаю тебя. Вот список доступных команд:\n' \
+                  '1. Поприветствуй, если ты в первый раз [привет, hi]\n' \
+                  '2. "/n" или "Next" - для просмотра следующего;\n' \
+                  '3. "/af" - добавить в список избранных;\n' \
+                  '4. "/abl" - добавить в черный список;\n' \
+                  '5. "/sf" - показать список избранных;\n' \
+                  '6. "/sbl" - показать черный список;\n' \
+                  '7. "/fm" - запустить доп. поиск.'
         self.send_message(user_id=user_id, message=message)
