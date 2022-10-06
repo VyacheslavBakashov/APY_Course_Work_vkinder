@@ -24,17 +24,27 @@ def get_available_ids(user_id, db_conn) -> list:
     return list(set(match_ids).difference(set(skip_list)))
 
 
-def get_user_db(db_conn, some_ids):
-    """Выводит данные произвольного совпадения для user_vk_id"""
+def get_random_user_db(db_conn, some_ids):
+    """Выводит данные из базы данных произвольного совпадения для user_vk_id"""
     keys = ['first_name', 'last_name', 'profile_link', 'user_photos']
     values = db_conn.get_info(random.choice(some_ids))
     return dict(zip(keys, values))
 
 
-def search_add_users(user_id, vk_conn, db_conn, count=50):
+def get_user_db(db_conn, some_id):
+    """Выводит данные из базы данных совпадения match_user.id"""
+    keys = ['first_name', 'last_name', 'profile_link', 'user_photos']
+    values = db_conn.get_info(some_id)
+
+    return dict(zip(keys, values))
+
+
+def search_add_users(user_id, vk_conn, db_conn, count=100):
     """Ищет людей и добавляет их в базу данных (в match_users и couple) для user_vk_id"""
     params = vk_conn.get_params_for_search(user_id)
-    found_list = iter(vk_conn.search(count=count, **params))
+    search_resp = vk_conn.search(count=count, **params)
+    found_list = iter(vk_conn.make_found_list(user_id, db_conn, search_resp))
+
     for person in found_list:
         db_conn.add_match_user(**person)
         db_conn.add_couple(
@@ -72,24 +82,23 @@ if __name__ == '__main__':
     try:
         while True:
             user_id_, msg = my_bot.bot_listen()
-
             if msg.lower() in ['привет', 'hello', 'hi', '/q', 'прив']:
                 my_bot.say_hello(user_id_, my_db)
 
             elif msg.lower() in ['старт', '/s', '/ы']:
                 my_db.add_user(user_id_)
                 search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
-                current_finding = get_user_db(my_db, get_available_ids(user_id_, my_db))
+                current_finding = get_random_user_db(my_db, get_available_ids(user_id_, my_db))
                 my_bot.push_start(user_id_, current_finding)
 
             elif msg.lower() in ['next', '/n']:
                 avail_ids = get_available_ids(user_id_, my_db)
                 if len(avail_ids) > 3:
-                    current_finding = get_user_db(my_db, avail_ids)
+                    current_finding = get_random_user_db(my_db, avail_ids)
                 else:
                     my_bot.push_search_more(user_id_)
                     search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
-                    current_finding = get_user_db(my_db, get_available_ids(user_id_, my_db))
+                    current_finding = get_random_user_db(my_db, get_available_ids(user_id_, my_db))
                 my_bot.push_next(user_id_, current_finding)
 
             elif msg.lower() in ['to favorite list', '/af']:
@@ -121,7 +130,9 @@ if __name__ == '__main__':
                 show_list(black_list, my_db, my_bot, user_id_)
 
             elif msg.lower() in ['find more', '/fm']:
-                search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot)
+                my_bot.send_message(user_id_, 'Поиск займёт какое-то время',
+                                    my_bot.key_review.get_keyboard())
+                search_add_users(user_id_, db_conn=my_db, vk_conn=my_bot, count=100)
                 my_bot.send_message(user_id_, 'Готово! Кликни Next',
                                     my_bot.key_review.get_keyboard())
 

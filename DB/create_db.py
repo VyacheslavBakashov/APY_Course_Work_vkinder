@@ -22,7 +22,7 @@ class MatchUsers(Base):
     first_name = sqla.Column(sqla.String(40))
     last_name = sqla.Column(sqla.String(40))
     profile_link = sqla.Column(sqla.String(80))
-    user_photos = sqla.Column(sqla.String(150))
+    user_photos = sqla.Column(sqla.String(250))
     city = sqla.Column(sqla.String(50))
     bdate = sqla.Column(sqla.String(30))
     couples1 = relationship('couple', backref='match_user1')

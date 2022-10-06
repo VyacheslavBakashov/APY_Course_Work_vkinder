@@ -42,7 +42,7 @@ class VkBot:
 
     def get_user_info(self, user_id) -> dict:
         """
-        Возвращает словарь из параметров пользователя
+        Делает запрос и возвращает словарь с параметрами пользователя
         :param user_id: vk_user_id
         :return: {'first_name': имя, 'last_name': фамилия, 'city': город,
          'bdate': дата рождения, 'sex': пол, 'id': VK_id}
@@ -55,14 +55,14 @@ class VkBot:
     def _get_photos(self, owner_id):
         """Вспомогательный метод для получения трех фотографии для подстановки в attachment сообщения от бота"""
         params_ = {'owner_id': owner_id,
-                   'album_id': -6,
+                   'album_id': 'profile',
                    'extended': 1,
                    'has_photo': 1,
-                   'photo_sizes': 1,
+                   'photo_sizes': 0,
                    'count': 100}
 
         def get_three_photos(response):
-            return sorted(response['items'], key=lambda x: x['likes']['count'], reverse=True)[:4]
+            return sorted(response['items'], key=lambda x: x['likes']['count'])[-4:]
 
         try:
             resp = self.user_session.method('photos.get', params_)
@@ -71,7 +71,7 @@ class VkBot:
         else:
             return ','.join([f'photo{owner_id}_{photo["id"]}' for photo in get_three_photos(resp)])
 
-    def search(self, sex: str, age_from=18, age_to=None, city=None, country=1, count=50) -> list:
+    def search(self, sex: str, age_from=18, age_to=None, city=None, country=1, count=100) -> list:
         """
         Метод для поиска пользователей VK по параметрам
         :param count: количество для поиска
@@ -103,23 +103,30 @@ class VkBot:
             print(err, 'Поиск не удался')
             return []
         else:
-            found_list = []
-            keys = ['first_name', 'last_name', 'profile_link', 'vk_id', 'bdate', 'user_photos']
-            for item in response['items']:
-                photos = self._get_photos(item['id'])
-                print(photos)
-                if photos and item.get('sex'):
-                    values = [item[keys[0]],
-                              item[keys[1]],
-                              'https://vk.com/id' + str(item['id']),
-                              item['id'],
-                              item[keys[4]],
-                              photos
-                              ]
-                    person_info = dict(zip(keys, values))
-                    person_info['city'] = item.get('city', {'id': None})['id']
-                    found_list.append(person_info)
-            return found_list
+            return response['items']
+
+    def make_found_list(self, user_id, db_conn, response):
+        found_list = []
+        keys = ['first_name', 'last_name', 'profile_link', 'vk_id', 'bdate', 'user_photos']
+        match_user_ids = db_conn.get_match_ids(user_id)
+        for item in response:
+            owner_id = item['id']
+            match_db_id = db_conn.find_db_id_match_user(owner_id)
+            photos = None
+            if match_db_id not in match_user_ids:
+                photos = self._get_photos(owner_id)
+            if photos and item.get('sex'):
+                values = [item[keys[0]],
+                          item[keys[1]],
+                          'https://vk.com/id' + str(item['id']),
+                          item['id'],
+                          item[keys[4]],
+                          photos
+                          ]
+                person_info = dict(zip(keys, values))
+                person_info['city'] = item.get('city', {'id': None})['id']
+                found_list.append(person_info)
+        return found_list
 
     def get_params_for_search(self, user_id) -> dict:
         """
@@ -128,10 +135,15 @@ class VkBot:
         :return: словарь с параметрами поиска
         """
         user_info = self.get_user_info(user_id)
-        user_age = (dt.now() - dt.strptime(user_info['bdate'], '%d.%m.%Y')).days // 365  # приблизительно
+        birth_date = user_info.get('bdate')
+        city = user_info.get('city', {'id': 1}).get('id')
+        if birth_date:
+            user_age = (dt.now() - dt.strptime(user_info.get('bdate'), '%d.%m.%Y')).days // 365  # приблизительно
+        else:
+            user_age = 26
         find_dict = {
             'sex': user_info['sex'] % 2 + 1,
-            'city': user_info['city']['id'],
+            'city': city,
             'age_from': user_age - 10,
             'age_to': user_age
         }
